@@ -1,0 +1,23 @@
+services:
+  app-a:
+    build: ./app-a
+    networks:
+      - monitoring-net
+
+  app-b:
+    build: ./app-b
+    networks:
+      - monitoring-net
+
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - app-a
+      - app-b
+    networks:
+      - monitoring-net
+
+networks:
+  monitoring-net:
