@@ -18,6 +18,8 @@ services:
       - app-b
     networks:
       - monitoring-net
+    volumes:
+      - ./logs:/var/log/nginx  
 
 networks:
   monitoring-net:

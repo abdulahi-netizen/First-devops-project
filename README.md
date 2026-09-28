@@ -44,3 +44,34 @@ Example log output:
 2026-09-28 10:58:01 - app-b: UP
 2026-09-28 11:17:31 - app-a: DOWN
 2026-09-28 11:17:31 - app-b: UP
+
+## Diagram
+             ┌────────────────────┐
+
+Host (me) │ │
+localhost:80 ─▶│ nginx │
+│ (reverse proxy) │
+└─────────┬──────────┘
+│
+┌────────────┴────────────┐
+│ monitoring-net (Docker │
+│ bridge network) │
+└────────────┬────────────┘
+│
+┌────────────┴────────────┐
+│ │
+┌─────▼─────┐ ┌──────▼─────┐
+│ app-a │ │ app-b │
+│ (port 8000)│ │ (port 8000)│
+└────────────┘ └────────────┘
+
+
+Only nginx is exposed to the host. app-a and app-b are reachable only inside the Docker network, by container name.
+
+## Logging & Permissions
+
+Nginx's access and error logs are written to a host-mounted volume (`./logs:/var/log/nginx` in `docker-compose.yml`), so log data survives container restarts and is directly inspectable from the host without needing `docker exec`.
+
+By default this directory would be created with very permissive access. I deliberately avoided `chmod 777`, since that would let any user or process on the host write into the log directory — nothing needs that except the container itself. The correct restriction is `755` (owner: read/write/execute, everyone else: read/execute only), since only the nginx process needs write access.
+
+In practice, running `chmod 755 logs` from WSL against this project's location (`/mnt/c/...`, a Windows-mounted path) returned `Operation not permitted`. This is because NTFS doesn't have native Unix permission bits, WSL bridges Windows paths into Linux with a fixed permissive default, and that default can't actually be changed from the Linux side since there's no real Unix permission metadata underneath to modify. Running this project from WSL's native Linux filesystem (e.g. `~/` instead of `/mnt/c/...`) would resolve this, since `chmod` operates on genuine ext4 permission bits there.
