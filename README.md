@@ -1,77 +1,199 @@
-# Dockerized Multi-Service Monitoring Stack
+First DevOps Project
 
-A small multi-container stack with an Nginx reverse proxy routing to two backend services, all connected on a custom Docker network. Built as a DevOps fundamentals capstone covering Docker, networking, Bash automation, and Git.
-## Architecture
+This is a small Docker project I built to practise some of the DevOps fundamentals I’ve been learning.
 
-This stack has three containers, all connected on a custom Docker bridge network (`monitoring-net`):
+The main things I wanted to practise were:
 
-- **nginx** — the only container exposed to the host, on port 80. Acts as a reverse proxy, routing incoming requests to the correct backend based on the URL path.
-- **app-a** — a simple Python HTTP server, not reachable from outside the network.
-- **app-b** — same as app-a, running independently.
+* Docker and Dockerfiles
+* Docker Compose
+* Container networking
+* Nginx as a reverse proxy
+* Bash scripting
+* Basic health checking
+* Git/GitHub
 
-Nginx routes to each backend by container name (e.g. `http://app-a:8000`), relying on Docker's internal DNS rather than hardcoded IP addresses. This means the backend containers are never directly reachable from the host — only through the proxy.
+What the project does
 
-## How to Run It
+There are three containers:
 
-1. Clone the repo:
+* app-a – a small Python HTTP server
+* app-b – another small Python HTTP server
+* nginx – sits in front of the two apps and routes requests to them
+
+The two Python applications both listen on port 8000 inside their containers.
+
+Nginx is the only container exposed to my host machine on port 80.
+
+The idea is:
+
+Browser
+   |
+   | localhost:80
+   v
+ Nginx
+  /   \
+ /     \
+app-a  app-b
+
+The containers communicate using a Docker bridge network called monitoring-net.
+
+Project structure
+
+.
+├── app-a/
+│   ├── Dockerfile
+│   └── app.py
+├── app-b/
+│   ├── Dockerfile
+│   └── app.py
+├── nginx/
+│   ├── Dockerfile
+│   └── nginx.conf
+├── scripts/
+│   ├── deploy.sh
+│   ├── healthcheck.sh
+│   └── healthcheck.log
+├── .gitignore
+├── docker-compose.yml
+└── README.md
+
+Running the project
+
+Clone the repository:
+
 git clone https://github.com/abdulahi-netizen/First-devops-project.git
 cd First-devops-project
 
-
-2. Bring up the stack:
+Then run:
 
 ./scripts/deploy.sh
 
-   This builds all images, starts the containers, and waits until both backend services are responding before reporting success.
+The script builds the images, starts the containers in the background, and checks whether app-a is responding.
 
-3. Visit:
-   - `http://localhost/app-a/`
-   - `http://localhost/app-b/`
+You can then test the applications in your browser:
 
-   You should see "Hello from App A!" and "Hello from App B!" respectively.
+http://localhost/app-a/
+http://localhost/app-b/
 
-   ## Checking Health
+You should get:
 
-Run the health check manually at any time:
+Hello from App A!
+
+and:
+
+Hello from App B!
+
+How the routing works
+
+Nginx listens on port 80.
+
+In the Nginx configuration:
+
+location /app-a/ {
+    proxy_pass http://app-a:8000/;
+}
+location /app-b/ {
+    proxy_pass http://app-b:8000/;
+}
+
+So when I visit:
+
+http://localhost/app-a/
+
+the request reaches Nginx first.
+
+Nginx then forwards it to:
+
+app-a:8000
+
+The same happens for app-b.
+
+I use the container names instead of IP addresses because Docker provides DNS between containers on the same network.
+
+Docker networking
+
+The three containers are connected to:
+
+monitoring-net
+
+It is a Docker bridge network.
+
+The backend containers don’t have ports published to the host. This means I can’t directly access app-a:8000 or app-b:8000 from my host machine.
+
+Instead, requests go through Nginx.
+
+This gives the project a simple separation between the public-facing container and the backend containers.
+
+Docker Compose
+
+docker-compose.yml defines the three services and the network.
+
+The important part is:
+
+ports:
+  - "80:80"
+
+This publishes port 80 on my machine and maps it to port 80 inside the Nginx container.
+
+The two Python applications don’t have a ports section because they only need to be reachable from inside the Docker network.
+
+Health checking
+
+I also created a simple Bash health-check script:
 
 bash scripts/healthcheck.sh
 
-This checks both services, appends a timestamped result to `scripts/healthcheck.log`, and exits with a non-zero code if anything is down.
+It checks:
 
-Example log output:
+http://localhost/app-a/
+http://localhost/app-b/
+
+If a service responds successfully, it records it as UP.
+
+If it doesn’t respond successfully, it records it as DOWN.
+
+The results are written to:
+
+scripts/healthcheck.log
+
+The script also returns a non-zero exit code if either application is down.
+
+For example:
 
 2026-09-28 10:58:01 - app-a: UP
 2026-09-28 10:58:01 - app-b: UP
 2026-09-28 11:17:31 - app-a: DOWN
 2026-09-28 11:17:31 - app-b: UP
 
-## Diagram
-             ┌────────────────────┐
+I kept this script simple because the purpose of the project was to practise Bash and basic service monitoring rather than build a complete monitoring system.
 
-Host (me) │ │
-localhost:80 ─▶│ nginx │
-│ (reverse proxy) │
-└─────────┬──────────┘
-│
-┌────────────┴────────────┐
-│ monitoring-net (Docker │
-│ bridge network) │
-└────────────┬────────────┘
-│
-┌────────────┴────────────┐
-│ │
-┌─────▼─────┐ ┌──────▼─────┐
-│ app-a │ │ app-b │
-│ (port 8000)│ │ (port 8000)│
-└────────────┘ └────────────┘
+Nginx logs
 
+The Nginx container has this volume:
 
-Only nginx is exposed to the host. app-a and app-b are reachable only inside the Docker network, by container name.
+volumes:
+  - ./logs:/var/log/nginx
 
-## Logging & Permissions
+This maps the logs directory on my machine to Nginx’s log directory inside the container.
 
-Nginx's access and error logs are written to a host-mounted volume (`./logs:/var/log/nginx` in `docker-compose.yml`), so log data survives container restarts and is directly inspectable from the host without needing `docker exec`.
+This means the logs can be accessed from the host and aren’t lost just because the Nginx container is recreated.
 
-By default this directory would be created with very permissive access. I deliberately avoided `chmod 777`, since that would let any user or process on the host write into the log directory — nothing needs that except the container itself. The correct restriction is `755` (owner: read/write/execute, everyone else: read/execute only), since only the nginx process needs write access.
+What I learned
 
-In practice, running `chmod 755 logs` from WSL against this project's location (`/mnt/c/...`, a Windows-mounted path) returned `Operation not permitted`. This is because NTFS doesn't have native Unix permission bits, WSL bridges Windows paths into Linux with a fixed permissive default, and that default can't actually be changed from the Linux side since there's no real Unix permission metadata underneath to modify. Running this project from WSL's native Linux filesystem (e.g. `~/` instead of `/mnt/c/...`) would resolve this, since `chmod` operates on genuine ext4 permission bits there.
+This project helped me understand how the different pieces fit together.
+
+The main thing I learned was that containers can communicate with each other using Docker networking without exposing every service directly to the host.
+
+I also got practice with:
+
+* Writing Dockerfiles
+* Building images
+* Running multiple containers with Compose
+* Creating a Docker network
+* Using Nginx as a reverse proxy
+* Writing Bash scripts
+* Checking services with curl
+* Working with container logs
+* Using Git and GitHub
+
+This is a learning project, so there are things I would improve in a production setup, such as pinning image versions, adding stronger application health checks, and improving the deployment script.
